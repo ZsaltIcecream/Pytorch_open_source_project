@@ -1983,7 +1983,7 @@ def move_constructors_to_gpu(graph: fx.Graph) -> None:
     )(graph)
 
 
-def coalesce_foreach_mutations(graph_module: torch.fx.GraphModule, tolerance=100):
+def capture_foreach_(graph_module: torch.fx.GraphModule, tolerance=100):
     graph = graph_module.graph
 
     for node in graph.nodes:

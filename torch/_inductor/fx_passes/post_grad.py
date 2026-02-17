@@ -1981,3 +1981,59 @@ def move_constructors_to_gpu(graph: fx.Graph) -> None:
         allow_inputs=allow_inputs_outputs,
         allow_outputs=allow_inputs_outputs,
     )(graph)
+
+
+def coalesce_foreach_mutations(graph_module: torch.fx.GraphModule, tolerance=100):
+    graph = graph_module.graph
+
+    for node in graph.nodes:
+        
+        if node.op == 'call_function' and 'foreach' in str(node.target):
+            
+            #Check the tolerance
+            input_list = node.args[0]
+            if len(input_list) <= tolerance:
+                continue
+
+            valid_rewrite = True
+            copy_nodes = []
+            getitem_nodes = []
+            
+            for i, input_tensor_node in enumerate(input_list):
+                found_getitem = None
+                for user in node.users:
+                    if user.target == getattr(torch.ops.aten, "getitem", None) and user.args[1] == i:
+                        found_getitem = user
+                        break
+                
+                if not found_getitem:
+                    valid_rewrite = False; break
+
+                found_copy = None
+                for user in found_getitem.users:
+                    if user.target == torch.ops.aten.copy_.default:
+                        if user.args[0] == input_tensor_node: 
+                            found_copy = user
+                            break
+                
+                if not found_copy:
+                    valid_rewrite = False; break
+                
+                getitem_nodes.append(found_getitem)
+                copy_nodes.append(found_copy)
+
+            if valid_rewrite:
+                #Replace with _foreach_copy_
+                with graph.inserting_after(node):                   
+                    graph.call_function(
+                        torch.ops.aten._foreach_copy_.default, 
+                        args=(input_list, getitem_nodes) 
+                    )
+                
+                #clean copy_'s
+                for copy_node in copy_nodes:
+                    graph.erase_node(copy_node)
+
+    graph.lint()
+    graph_module.recompile()
+    return graph_module

@@ -2030,7 +2030,7 @@ def coalesce_foreach_mutations(graph_module: torch.fx.GraphModule, tolerance=100
                         args=(input_list, getitem_nodes) 
                     )
                 
-                #clean copy_'s
+                #clean the copy_'s
                 for copy_node in copy_nodes:
                     graph.erase_node(copy_node)
 
